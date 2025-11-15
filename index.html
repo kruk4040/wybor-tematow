@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Wybor Tematow</title>
+<style>
+  body{display:flex;flex-direction:column;align-items:center;padding:20px;background:#f7f8fb;color:#111;font-family:system-ui,sans-serif;}
+  h1{text-align:center;margin:6px 0 18px}
+  .panel{width:100%;max-width:900px;background:#fff;padding:16px;border-radius:10px;box-shadow:0 6px 18px rgba(2,6,23,.06);margin-bottom:18px}
+  label{display:block;margin-bottom:6px;font-weight:600}
+  select,input{padding:8px;border-radius:8px;border:1px solid #cbd5e1;width:100%;box-sizing:border-box}
+  .memberRow{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px}
+  button{padding:8px 12px;border-radius:8px;border:0;background:#2563eb;color:#fff;cursor:pointer}
+  button.secondary{background:#64748b}
+  button.danger{background:#ef4444}
+  .topicBox{width:100%;max-width:900px;background:#fff;padding:12px;border-radius:10px;box-shadow:0 2px 6px rgba(2,6,23,.04);margin-bottom:10px}
+  .topicHeader{display:flex;justify-content:space-between;align-items:center}
+  table{width:100%;border-collapse:collapse;margin-top:10px}
+  th,td{border:1px solid #e2e8f0;padding:8px;text-align:left}
+  .timestamp{font-size:12px;color:#475569;margin-top:6px}
+  .adminBar{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:8px}
+  .note{font-size:13px;color:#475569;margin-top:8px;text-align:center}
+  .hidden{display:none}
+  .controls{display:flex;gap:6px;margin-top:6px}
+  .muted{color:#64748b;font-size:13px}
+  @media (max-width:600px){ .memberRow{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<h1>Lista Tematów</h1>
+
+<div class="panel" id="mainPanel">
+  <div style="margin-bottom:8px">
+    <label>Wybierz temat (1–30)</label>
+    <select id="topicSelect"></select>
+  </div>
+
+  <div style="margin-bottom:8px">
+    <label>Liczba członków grupy (1–6)</label>
+    <select id="memberCount">
+      <option value="">-- wybierz --</option>
+      <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+      <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+    </select>
+  </div>
+
+  <div id="members"></div>
+
+  <div style="display:flex;gap:8px;justify-content:center;margin-top:8px">
+    <button id="sendBtn">Wyślij</button>
+    <button id="clearBtn" class="secondary">Wyczyść pola</button>
+  </div>
+
+  
+</div>
+
+<div id="topicsContainer" style="width:100%;max-width:900px"></div>
+
+<div class="panel" style="max-width:900px;margin-top:12px">
+  <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+    <div style="flex:1;min-width:200px">
+      <label>Login</label>
+      <input id="loginInput" placeholder="login" />
+    </div>
+    <div style="flex:1;min-width:200px">
+      <label>Hasło</label>
+      <input id="passwordInput" type="password" placeholder="hasło" />
+    </div>
+    <div style="align-self:end">
+      <button id="loginBtn">Zaloguj</button>
+      <button id="logoutBtn" class="secondary hidden">Wyloguj</button>
+    </div>
+  </div>
+
+  <div class="adminBar">
+    <div id="adminStatus" class="muted">Nie zalogowano</div>
+  </div>
+  
+</div>
+
+<script>
+
+const ADMIN_LOGIN = 'admin';
+const ADMIN_PASS = 'kutaskozla';
+const STORAGE_KEY = 'tematy30_admin_v3';
+const EVENT_LOG_KEY = 'adminEventLog';
+
+let topics = Array.from({length:30}, (_,i)=>({title:`Temat ${i+1}`, records:[]}));
+
+const raw = localStorage.getItem(STORAGE_KEY);
+if(raw){
+  try{
+    const parsed = JSON.parse(raw);
+    for(let i=0;i<Math.min(parsed.length,topics.length);i++){
+      if(parsed[i]){
+        if(parsed[i].records) topics[i].records = parsed[i].records;
+        if(parsed[i].title) topics[i].title = parsed[i].title;
+      }
+    }
+  }catch(e){ console.warn(e);}
+}
+
+
+const topicSelect = document.getElementById('topicSelect');
+const memberCount = document.getElementById('memberCount');
+const membersDiv = document.getElementById('members');
+const topicsContainer = document.getElementById('topicsContainer');
+const sendBtn = document.getElementById('sendBtn');
+const clearBtn = document.getElementById('clearBtn');
+
+const loginInput = document.getElementById('loginInput');
+const passwordInput = document.getElementById('passwordInput');
+const loginBtn = document.getElementById('loginBtn');
+const logoutBtn = document.getElementById('logoutBtn');
+const adminStatus = document.getElementById('adminStatus');
+
+let isAdmin=false;
+
+
+function formatDateFull(d){
+  const pad=n=>String(n).padStart(2,'0');
+  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+function save(){localStorage.setItem(STORAGE_KEY,JSON.stringify(topics));}
+function loadTopicsSelect(){topicSelect.innerHTML=topics.map((t,i)=>`<option value="${i}">${i+1}. ${t.title}</option>`).join('');}
+function escapeHtml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+
+
+function validName(name){return /^[A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ ]+$/.test(name);}
+function validAlbum(album){return /^[0-9]+$/.test(album);}
+
+
+function logEvent(text){
+  const now = new Date();
+  const entry = `${formatDateFull(now)} — ${text}`;
+  let log = JSON.parse(localStorage.getItem(EVENT_LOG_KEY)||'[]');
+  log.push(entry);
+  localStorage.setItem(EVENT_LOG_KEY, JSON.stringify(log));
+}
+function logAdminAction(actionText){if(isAdmin) logEvent(actionText);}
+
+
+memberCount.addEventListener('change',()=>{
+  const n = Number(memberCount.value);
+  membersDiv.innerHTML='';
+  if(!n || n<1) return;
+  for(let i=1;i<=n;i++){
+    const row=document.createElement('div');
+    row.className='memberRow';
+    row.innerHTML=`<input class="memberName" placeholder="Imię i nazwisko ${i}" />
+                     <input class="memberAlbum" placeholder="Numer albumu ${i}" />`;
+    membersDiv.appendChild(row);
+  }
+});
+
+
+sendBtn.addEventListener('click',()=>{
+  const idx=Number(topicSelect.value);
+  const names=[...document.querySelectorAll('.memberName')];
+  const albums=[...document.querySelectorAll('.memberAlbum')];
+  if(names.length===0) return alert('Wybierz liczbę członków!');
+  const members=[];
+  for(let i=0;i<names.length;i++){
+    const n=names[i].value.trim();
+    const a=albums[i].value.trim();
+    if(!n || !a) return alert('Wypełnij wszystkie pola!');
+    if(!validName(n)) return alert(`Imię i nazwisko członka ${i+1} może zawierać tylko litery i spacje`);
+    if(!validAlbum(a)) return alert(`Numer albumu członka ${i+1} może zawierać tylko cyfry`);
+    members.push({name:n,album:a});
+  }
+  const now = new Date();
+  const time = formatDateFull(now);
+  topics[idx].records.push({members,time});
+  save(); renderTopics();
+  membersDiv.innerHTML=''; memberCount.value='';
+});
+
+
+clearBtn.addEventListener('click',()=>{membersDiv.innerHTML='';memberCount.value='';});
+
+
+function renderTopics(){
+  topicsContainer.innerHTML='';
+  topics.forEach((t,topicIndex)=>{
+    const box=document.createElement('div'); box.className='topicBox';
+    box.innerHTML=`<div class="topicHeader">
+      <h3 style="margin:0">${t.title}</h3>
+      <div class="muted">#${topicIndex+1}</div>
+    </div>`;
+    if(t.records.length===0){
+      box.innerHTML+=`<div class="timestamp">Brak zgłoszeń</div>`;
+    }else{
+      t.records.forEach((rec,recIndex)=>{
+        const recDiv=document.createElement('div');
+        let tableHtml='<table><thead><tr><th>Imię i nazwisko</th><th>Album</th></tr></thead><tbody>';
+        rec.members.forEach(m=>{tableHtml+=`<tr><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.album)}</td></tr>`;});
+        tableHtml+='</tbody></table>';
+        recDiv.innerHTML=tableHtml;
+        recDiv.innerHTML+=`<div class="timestamp">Wysłano: ${escapeHtml(rec.time)}</div>`;
+        if(isAdmin){
+          const ctrl=document.createElement('div'); ctrl.className='controls';
+          const editBtn=document.createElement('button'); editBtn.textContent='Edytuj';
+          editBtn.addEventListener('click',()=>openEditDialog(topicIndex,recIndex));
+          const delBtn=document.createElement('button'); delBtn.textContent='Usuń'; delBtn.className='danger';
+          delBtn.addEventListener('click',()=>{
+            if(confirm('Na pewno usunąć ten wpis?')){
+              topics[topicIndex].records.splice(recIndex,1); save(); renderTopics();
+              logAdminAction(`Usunięto wpis w temacie "${topics[topicIndex].title}"`);
+            }
+          });
+          ctrl.appendChild(editBtn); ctrl.appendChild(delBtn);
+          recDiv.appendChild(ctrl);
+        }
+        box.appendChild(recDiv);
+      });
+    }
+    if(isAdmin){
+      const editTopicBtn=document.createElement('button'); editTopicBtn.textContent='Edytuj temat'; editTopicBtn.style.marginTop='6px';
+      editTopicBtn.addEventListener('click',()=>editTopicTitle(topicIndex));
+      box.appendChild(editTopicBtn);
+    }
+    topicsContainer.appendChild(box);
+  });
+}
+
+
+function editTopicTitle(topicIndex){
+  const newTitle=prompt('Nowa nazwa tematu:',topics[topicIndex].title);
+  if(newTitle && newTitle.trim()!==''){
+    const oldTitle=topics[topicIndex].title;
+    topics[topicIndex].title=newTitle.trim();
+    save(); loadTopicsSelect(); renderTopics();
+    logAdminAction(`Zmieniono nazwę tematu z "${oldTitle}" na "${newTitle.trim()}"`);
+  }
+}
+
+
+function openEditDialog(topicIndex,recIndex){
+  const rec = topics[topicIndex].records[recIndex];
+  if(!rec) return;
+  const overlay=document.createElement('div');
+  overlay.style.position='fixed'; overlay.style.left=0; overlay.style.top=0; overlay.style.right=0; overlay.style.bottom=0;
+  overlay.style.background='rgba(0,0,0,0.4)'; overlay.style.display='flex'; overlay.style.alignItems='center'; overlay.style.justifyContent='center'; overlay.style.zIndex=9999;
+  const dlg=document.createElement('div'); dlg.style.background='#fff'; dlg.style.padding='16px'; dlg.style.borderRadius='8px'; dlg.style.width='90%'; dlg.style.maxWidth='700px';
+  dlg.innerHTML=`<h3>Edytuj wpis — ${topics[topicIndex].title}</h3>`;
+  const form=document.createElement('div');
+  rec.members.forEach((m,i)=>{
+    const row=document.createElement('div'); row.className='memberRow'; row.style.marginBottom='8px';
+    const nameInp=document.createElement('input'); nameInp.value=m.name; nameInp.className='editName';
+    const albumInp=document.createElement('input'); albumInp.value=m.album; albumInp.className='editAlbum';
+    row.appendChild(nameInp); row.appendChild(albumInp); form.appendChild(row);
+  });
+  const timeRow=document.createElement('div'); timeRow.style.marginTop='8px';
+  timeRow.innerHTML=`<label>Data (YYYY-MM-DD HH:MM:SS)</label><input class="editTime" value="${rec.time}" />`;
+  form.appendChild(timeRow);
+  const buttons=document.createElement('div'); buttons.style.display='flex'; buttons.style.gap='8px'; buttons.style.marginTop='10px';
+  const saveBtn=document.createElement('button'); saveBtn.textContent='Zapisz';
+  const cancelBtn=document.createElement('button'); cancelBtn.textContent='Anuluj'; cancelBtn.className='secondary';
+  buttons.appendChild(saveBtn); buttons.appendChild(cancelBtn); dlg.appendChild(form); dlg.appendChild(buttons); overlay.appendChild(dlg); document.body.appendChild(overlay);
+  cancelBtn.addEventListener('click',()=>document.body.removeChild(overlay));
+  saveBtn.addEventListener('click',()=>{
+    const newNames=[...dlg.querySelectorAll('.editName')].map(i=>i.value.trim());
+    const newAlbums=[...dlg.querySelectorAll('.editAlbum')].map(i=>i.value.trim());
+    const newTime=dlg.querySelector('.editTime').value.trim();
+    if(newNames.some(n=>!n) || newAlbums.some(a=>!a)) return alert('Wypełnij wszystkie pola!');
+    if(newNames.some(n=>!validName(n))) return alert('Imię i nazwisko musi zawierać tylko litery i spacje!');
+    if(newAlbums.some(a=>!validAlbum(a))) return alert('Numer albumu musi zawierać tylko cyfry!');
+    rec.members=newNames.map((n,i)=>({name:n, album:newAlbums[i]}));
+    rec.time=newTime||formatDateFull(new Date());
+    save(); renderTopics(); document.body.removeChild(overlay);
+    logAdminAction(`Edytowano wpis w temacie "${topics[topicIndex].title}"`);
+  });
+}
+
+
+function setAdminMode(on){
+  isAdmin=!!on;
+  if(isAdmin){ adminStatus.textContent='Zalogowano jako admin'; logoutBtn.classList.remove('hidden'); loginBtn.classList.add('hidden'); loginInput.disabled=true; passwordInput.disabled=true;}
+  else {adminStatus.textContent='Nie zalogowano'; logoutBtn.classList.add('hidden'); loginBtn.classList.remove('hidden'); loginInput.disabled=false; passwordInput.disabled=false;}
+  renderTopics();
+}
+
+
+loginBtn.addEventListener('click',()=>{
+  const login=(loginInput.value||'').trim();
+  const pass=(passwordInput.value||'').trim();
+  if(login===ADMIN_LOGIN && pass===ADMIN_PASS){sessionStorage.setItem('isAdmin','1'); setAdminMode(true); alert('Zalogowano jako admin'); logEvent('Admin zalogował się');}
+  else alert('Niepoprawny login lub hasło');
+});
+logoutBtn.addEventListener('click',()=>{logEvent('Admin wylogował się'); sessionStorage.removeItem('isAdmin'); loginInput.value=''; passwordInput.value=''; setAdminMode(false);});
+if(sessionStorage.getItem('isAdmin')==='1') setAdminMode(true);
+
+
+const eventLogBtn=document.createElement('button');
+eventLogBtn.textContent='Dziennik zdarzeń'; eventLogBtn.style.marginTop='6px'; eventLogBtn.className='secondary';
+eventLogBtn.addEventListener('click',()=>{
+  let log=JSON.parse(localStorage.getItem(EVENT_LOG_KEY)||'[]');
+  if(log.length===0) alert('Brak zdarzeń.');
+  else alert('Dziennik zdarzeń:\n\n'+log.join('\n'));
+});
+document.querySelector('.adminBar').appendChild(eventLogBtn);
+
+
+loadTopicsSelect();
+renderTopics();
+</script>
+</body>
+</html>
