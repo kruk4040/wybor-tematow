@@ -193,7 +193,14 @@ function renderTopics(){
     }else{
       t.records.forEach((rec,recIndex)=>{
         const recDiv=document.createElement('div');
-        let tableHtml='<table><thead><tr><th>Imię i nazwisko</th><th>Album</th></tr></thead><tbody>';
+        const groupSize = rec.members.length;
+const groupClass = groupSize === 6 ? "fullGroup" : "smallGroup";
+
+let tableHtml = `<table class="${groupClass}">
+  <thead>
+    <tr><th>Imię i nazwisko</th><th>Album</th></tr>
+  </thead>
+  <tbody>`;
         rec.members.forEach(m=>{tableHtml+=`<tr><td>${escapeHtml(m.name)}</td><td>${escapeHtml(m.album)}</td></tr>`;});
         tableHtml+='</tbody></table>';
         recDiv.innerHTML=tableHtml;
@@ -307,3 +314,4 @@ renderTopics();
 </script>
 </body>
 </html>
+
