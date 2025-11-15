@@ -25,7 +25,6 @@
   .muted{color:#64748b;font-size:13px}
   @media (max-width:600px){ .memberRow{grid-template-columns:1fr} }
 
-  
   .fullGroup { background-color:#c6f6d5!important; }
   .smallGroup { background-color:#fef08a!important; }
   .albumError {
@@ -143,6 +142,7 @@ function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','
 
 function validName(n){return /^[A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ ]+$/.test(n);}
 function validAlbum(a){return /^[0-9]{1,5}$/.test(a);}  
+
 
 
 memberCount.addEventListener('change',()=>{
@@ -353,67 +353,109 @@ function openEditDialog(topicIndex,recIndex){
 
 
 
+
 function buildWorkbook(){
   const wb = XLSX.utils.book_new();
 
+  
+  const aoa = [];
+  const dataRowStyles = []; 
+
   topics.forEach((topic, tIndex) => {
-
-    const aoa = [];
-
     
     aoa.push([`Temat ${tIndex+1}: ${topic.title}`]);
-    aoa.push([]);
-    aoa.push(['Imię i nazwisko','Album','Data wysłania']);
+    dataRowStyles.push(null); 
 
-    topic.records.forEach(rec=>{
-      rec.members.forEach(m=>{
-        aoa.push([m.name, m.album, rec.time]);
-      });
-    });
-
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-
-    ws['!cols'] = [{wpx:220},{wpx:110},{wpx:160}];
+    aoa.push([]); 
+    dataRowStyles.push(null);
 
     
-    ['A3','B3','C3'].forEach(addr=>{
-      if(!ws[addr]) ws[addr] = {t:'s',v:''};
-      ws[addr].s = { font:{bold:true}, alignment:{horizontal:"center"} };
-    });
+    aoa.push(['Imię i nazwisko','Album','Data wysłania']);
+    dataRowStyles.push({header:true});
 
-    let rowIndex = 3;
-
+    
     topic.records.forEach(rec=>{
       const groupSize = rec.members.length;
+      
       const rowFillColor = (groupSize === 6) ? "C6F6D5" : "FEF08A";
 
       rec.members.forEach(m=>{
-        rowIndex++;
-
-        const A=`A${rowIndex}`, B=`B${rowIndex}`, C=`C${rowIndex}`;
-
-        ws[A] = {t:'s',v:m.name, s:{fill:{patternType:"solid",fgColor:{rgb:rowFillColor}}}};
-        ws[C] = {t:'s',v:rec.time, s:{fill:{patternType:"solid",fgColor:{rgb:rowFillColor}}}};
-
-        ws[B] = {t:'s',v:m.album, s:{fill:{patternType:"solid",fgColor:{rgb:rowFillColor}}}};
-
-        if(m.album === "00000"){
-          ws[B].s = {
-            fill:{patternType:"solid",fgColor:{rgb:"EF4444"}},
-            font:{color:{rgb:"FFFFFF"},bold:true}
-          };
-        }
+        aoa.push([m.name, m.album, rec.time]);
+        
+        const isAlbumError = (m.album === "00000");
+        dataRowStyles.push({fill: rowFillColor, albumError: isAlbumError});
       });
     });
 
-    XLSX.utils.book_append_sheet(wb, ws, `Temat ${tIndex+1}`);
+    
+    aoa.push([]);
+    dataRowStyles.push(null);
   });
+
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+
+  
+  ws['!cols'] = [{wpx:220},{wpx:110},{wpx:160}];
+
+  
+  let rowIndex = 1; 
+  for(let i=0;i<dataRowStyles.length;i++){
+    const styleInfo = dataRowStyles[i];
+    
+    const A = `A${rowIndex}`, B = `B${rowIndex}`, C = `C${rowIndex}`;
+
+    if(styleInfo && styleInfo.header){
+      
+      [A,B,C].forEach(addr=>{
+        if(!ws[addr]) ws[addr] = {t:'s',v:''};
+        ws[addr].s = ws[addr].s || {};
+        ws[addr].s.font = Object.assign({}, ws[addr].s.font, {bold:true});
+        ws[addr].s.alignment = Object.assign({}, ws[addr].s.alignment, {horizontal:"center"});
+      });
+    } else if(styleInfo && styleInfo.fill){
+      
+      const fillRgb = styleInfo.fill;
+      
+      if(!ws[A]) ws[A] = {t:'s',v:''};
+      ws[A].s = ws[A].s || {};
+      ws[A].s.fill = {patternType:"solid",fgColor:{rgb:fillRgb}};
+      
+      if(!ws[B]) ws[B] = {t:'s',v:''};
+      ws[B].s = ws[B].s || {};
+      ws[B].s.fill = {patternType:"solid",fgColor:{rgb:fillRgb}};
+      
+      if(!ws[C]) ws[C] = {t:'s',v:''};
+      ws[C].s = ws[C].s || {};
+      ws[C].s.fill = {patternType:"solid",fgColor:{rgb:fillRgb}};
+
+      
+      if(styleInfo.albumError){
+        ws[B].s = {
+          fill:{patternType:"solid",fgColor:{rgb:"EF4444"}},
+          font:{color:{rgb:"FFFFFF"},bold:true}
+        };
+      }
+    } else {
+      
+      if(ws[A] && typeof ws[A].v === 'string' && ws[A].v.startsWith('Temat ')){
+        ws[A].s = ws[A].s || {};
+        ws[A].s.font = Object.assign({}, ws[A].s.font, {bold:true, sz:12});
+      }
+    }
+
+    rowIndex++;
+  }
+
+  
+  const safeName = 'Wszystkie tematy'.substring(0,31);
+  XLSX.utils.book_append_sheet(wb, ws, safeName);
 
   return wb;
 }
 
 function downloadXLSX(){
   const wb = buildWorkbook();
+  
   XLSX.writeFile(wb, "tematy.xlsx", { bookType: "xlsx", cellStyles: true });
 }
 
