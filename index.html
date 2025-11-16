@@ -38,7 +38,6 @@
 
 <h1>Lista Tematów</h1>
 
-
 <div style="font-weight:bold; margin-bottom:18px; text-align:center;">
   <div style="color:#008000;">Kolor Zielony – GRUPA KOMPLETNA</div>
   <div style="color:#b59b00;">Kolor Żółty – GRUPA NIEPEŁNA</div>
@@ -94,419 +93,250 @@
 
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
-<script>
+<script type="module">
+  // ---------------- Firebase Setup ----------------
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-app.js";
+  import { getFirestore, doc, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.10.0/firebase-firestore.js";
 
-const ADMIN_LOGIN = 'admin';
-const ADMIN_PASS = 'kutaskozla';
-const STORAGE_KEY = 'tematy30_admin_v3';
+  const firebaseConfig = {
+    apiKey: "AIzaSyCoLC2QYoqN5IJibh2vzPDm-rgpcpCq7v4",
+    authDomain: "data2137-286de.firebaseapp.com",
+    databaseURL: "https://data2137-286de-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "data2137-286de",
+    storageBucket: "data2137-286de.appspot.com",
+    messagingSenderId: "432319656148",
+    appId: "1:432319656148:web:0c613e5a56dcb59d6f8b41",
+    measurementId: "G-4ZBDTPHWDL"
+  };
 
-let topics = Array.from({length:30}, (_,i)=>({title:`Temat ${i+1}`, records:[]}));
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const FIRESTORE_DOC_PATH = { collection: "tematy30", docId: "main" };
 
+  // ---------------- Globals ----------------
+  const ADMIN_LOGIN = 'admin';
+  const ADMIN_PASS = 'kutaskozla';
+  let topics = Array.from({length:30}, (_,i)=>({title:`Temat ${i+1}`, records:[]}));
 
-const raw = localStorage.getItem(STORAGE_KEY);
-if(raw){
-  try{
-    const parsed = JSON.parse(raw);
-    for(let i=0;i<Math.min(parsed.length,topics.length);i++){
-      if(parsed[i]){
-        if(parsed[i].records) topics[i].records = parsed[i].records;
-        if(parsed[i].title) topics[i].title = parsed[i].title;
-      }
-    }
-  }catch(e){ console.warn(e); }
-}
+  const topicSelect=document.getElementById('topicSelect');
+  const memberCount=document.getElementById('memberCount');
+  const membersDiv=document.getElementById('members');
+  const topicsContainer=document.getElementById('topicsContainer');
+  const sendBtn=document.getElementById('sendBtn');
+  const clearBtn=document.getElementById('clearBtn');
+  const loginInput=document.getElementById('loginInput');
+  const passwordInput=document.getElementById('passwordInput');
+  const loginBtn=document.getElementById('loginBtn');
+  const logoutBtn=document.getElementById('logoutBtn');
+  const adminStatus=document.getElementById('adminStatus');
+  const downloadBtn=document.getElementById('downloadBtn');
+  let isAdmin=false;
 
-
-const topicSelect=document.getElementById('topicSelect');
-const memberCount=document.getElementById('memberCount');
-const membersDiv=document.getElementById('members');
-const topicsContainer=document.getElementById('topicsContainer');
-const sendBtn=document.getElementById('sendBtn');
-const clearBtn=document.getElementById('clearBtn');
-const loginInput=document.getElementById('loginInput');
-const passwordInput=document.getElementById('passwordInput');
-const loginBtn=document.getElementById('loginBtn');
-const logoutBtn=document.getElementById('logoutBtn');
-const adminStatus=document.getElementById('adminStatus');
-const downloadBtn=document.getElementById('downloadBtn');
-
-let isAdmin=false;
-
-function formatDateFull(d){
-  const pad=n=>String(n).padStart(2,'0');
-  return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
-function save(){ localStorage.setItem(STORAGE_KEY, JSON.stringify(topics)); }
-function loadTopicsSelect(){ topicSelect.innerHTML = topics.map((t,i)=>`<option value="${i}">${i+1}. ${t.title}</option>`).join(''); }
-function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
-
-function validName(n){return /^[A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ ]+$/.test(n);}
-function validAlbum(a){return /^[0-9]{1,5}$/.test(a);}  
-
-
-
-memberCount.addEventListener('change',()=>{
-  const n = Number(memberCount.value);
-  membersDiv.innerHTML='';
-  if(!n) return;
-  for(let i=1;i<=n;i++){
-    const row=document.createElement('div');
-    row.className='memberRow';
-    row.innerHTML=`<input class="memberName" placeholder="Imię i nazwisko ${i}" />
-                   <input class="memberAlbum" maxlength="5" placeholder="Numer albumu ${i}" />`;
-    membersDiv.appendChild(row);
-  }
-});
-
-
-sendBtn.addEventListener('click',()=>{
-  const idx = Number(topicSelect.value);
-  const names=[...document.querySelectorAll('.memberName')];
-  const albums=[...document.querySelectorAll('.memberAlbum')];
-
-  if(names.length===0) return alert("Wybierz liczbę członków!");
-
-  const members=[];
-  for(let i=0;i<names.length;i++){
-    const n=names[i].value.trim();
-    const a=albums[i].value.trim();
-    if(!n || !a) return alert("Wypełnij wszystkie pola!");
-    if(!validName(n)) return alert(`Imię i nazwisko ${i+1} — tylko litery i spacje`);
-    if(!validAlbum(a)) return alert(`Numer albumu może mieć maksymalnie 5 cyfr`);
-    members.push({name:n,album:a});
+  function formatDateFull(d){
+    const pad=n=>String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
 
-  topics[idx].records.push({ members, time: formatDateFull(new Date()) });
-
-  save();
-  renderTopics();
-  membersDiv.innerHTML='';
-  memberCount.value='';
-});
-
-
-function renderTopics(){
-  topicsContainer.innerHTML='';
-  topics.forEach((t,topicIndex)=>{
-    const box=document.createElement('div');
-    box.className='topicBox';
-
-    box.innerHTML=`<div class="topicHeader">
-      <h3 style="margin:0">${t.title}</h3>
-      <div class="muted">#${topicIndex+1}</div>
-    </div>`;
-
-    if(t.records.length===0){
-      box.innerHTML+=`<div class="timestamp">Brak zgłoszeń</div>`;
-    } else {
-      t.records.forEach((rec,recIndex)=>{
-        const recDiv=document.createElement('div');
-
-        const groupSize = rec.members.length;
-        const groupClass = groupSize === 6 ? "fullGroup" : "smallGroup";
-
-        let tableHtml=`<table class="${groupClass}">
-          <thead><tr><th>Imię i nazwisko</th><th>Album</th></tr></thead>
-          <tbody>`;
-
-        rec.members.forEach(m=>{
-          const albumClass = m.album === "00000" ? "albumError" : "";
-          tableHtml+=`<tr>
-              <td>${escapeHtml(m.name)}</td>
-              <td class="${albumClass}">${escapeHtml(m.album)}</td>
-          </tr>`;
-        });
-
-        tableHtml+=`</tbody></table>`;
-        recDiv.innerHTML=tableHtml;
-
-        recDiv.innerHTML+=`<div class="timestamp">Wysłano: ${escapeHtml(rec.time)}</div>`;
-
-        if(isAdmin){
-          const ctrl=document.createElement('div');
-          ctrl.className='controls';
-
-          const editBtn=document.createElement('button');
-          editBtn.textContent='Edytuj';
-          editBtn.addEventListener('click',()=>openEditDialog(topicIndex,recIndex));
-
-          const delBtn=document.createElement('button');
-          delBtn.textContent='Usuń';
-          delBtn.className='danger';
-          delBtn.addEventListener('click',()=>{
-            if(confirm("Usunąć wpis?")){
-              topics[topicIndex].records.splice(recIndex,1);
-              save(); renderTopics();
+  async function loadFromFirestore(){
+    try {
+      const ref = doc(db, FIRESTORE_DOC_PATH.collection, FIRESTORE_DOC_PATH.docId);
+      const snap = await getDoc(ref);
+      if(snap.exists()){
+        const data = snap.data();
+        if(data.topics && Array.isArray(data.topics)){
+          for(let i=0;i<Math.min(data.topics.length, topics.length);i++){
+            if(data.topics[i]){
+              if(data.topics[i].records) topics[i].records = data.topics[i].records;
+              if(data.topics[i].title) topics[i].title = data.topics[i].title;
             }
-          });
-
-          ctrl.appendChild(editBtn);
-          ctrl.appendChild(delBtn);
-          recDiv.appendChild(ctrl);
+          }
         }
-
-        box.appendChild(recDiv);
-      });
-    }
-
-    if(isAdmin){
-      const editTopicBtn=document.createElement('button');
-      editTopicBtn.textContent='Edytuj temat';
-      editTopicBtn.style.marginTop='6px';
-      editTopicBtn.addEventListener('click',()=>editTopicTitle(topicIndex));
-      box.appendChild(editTopicBtn);
-    }
-
-    topicsContainer.appendChild(box);
-  });
-}
-
-
-function editTopicTitle(topicIndex){
-  const newTitle=prompt("Nowa nazwa:", topics[topicIndex].title);
-  if(newTitle && newTitle.trim()!==""){
-    topics[topicIndex].title=newTitle.trim();
-    save(); loadTopicsSelect(); renderTopics();
+      } else console.log('No Firestore doc, using defaults');
+    } catch(e){ console.error('Firestore load error', e); }
   }
-}
 
+  async function save(){
+    try {
+      const ref = doc(db, FIRESTORE_DOC_PATH.collection, FIRESTORE_DOC_PATH.docId);
+      await setDoc(ref, { topics }, { merge: true });
+      console.log('Saved to Firestore');
+    } catch(e){ console.error('Firestore save error', e); }
+  }
 
-function openEditDialog(topicIndex,recIndex){
-  const rec=topics[topicIndex].records[recIndex];
-  if(!rec) return;
+  function loadTopicsSelect(){ topicSelect.innerHTML = topics.map((t,i)=>`<option value="${i}">${i+1}. ${t.title}</option>`).join(''); }
+  function escapeHtml(s){ return String(s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+  function validName(n){return /^[A-Za-ząćęłńóśźżĄĆĘŁŃÓŚŹŻ ]+$/.test(n);}
+  function validAlbum(a){return /^[0-9]{1,5}$/.test(a);}
 
-  const overlay=document.createElement('div');
-  Object.assign(overlay.style,{
-    position:'fixed',left:0,top:0,right:0,bottom:0,
-    background:'rgba(0,0,0,0.4)',display:'flex',
-    alignItems:'center',justifyContent:'center',zIndex:9999
+  // ---------------- UI Event Listeners ----------------
+  memberCount.addEventListener('change',()=>{
+    const n = Number(memberCount.value);
+    membersDiv.innerHTML='';
+    if(!n) return;
+    for(let i=1;i<=n;i++){
+      const row=document.createElement('div');
+      row.className='memberRow';
+      row.innerHTML=`<input class="memberName" placeholder="Imię i nazwisko ${i}" />
+                     <input class="memberAlbum" maxlength="5" placeholder="Numer albumu ${i}" />`;
+      membersDiv.appendChild(row);
+    }
   });
 
-  const dlg=document.createElement('div');
-  Object.assign(dlg.style,{
-    background:'#fff',padding:'16px',borderRadius:'8px',
-    width:'90%',maxWidth:'700px'
+  sendBtn.addEventListener('click', async () => {
+    const idx = Number(topicSelect.value);
+    const names = [...document.querySelectorAll('.memberName')];
+    const albums = [...document.querySelectorAll('.memberAlbum')];
+
+    if(names.length===0) return alert("Wybierz liczbę członków!");
+    const members=[];
+    for(let i=0;i<names.length;i++){
+      const n=names[i].value.trim();
+      const a=albums[i].value.trim();
+      if(!n || !a) return alert("Wypełnij wszystkie pola!");
+      if(!validName(n)) return alert(`Imię i nazwisko ${i+1} — tylko litery i spacje`);
+      if(!validAlbum(a)) return alert(`Numer albumu może mieć maksymalnie 5 cyfr`);
+      members.push({name:n, album:a});
+    }
+
+    topics[idx].records.push({ members, time: formatDateFull(new Date()) });
+    await save();
+    renderTopics();
+    membersDiv.innerHTML='';
+    memberCount.value='';
   });
 
-  dlg.innerHTML=`<h3>Edytuj wpis — ${topics[topicIndex].title}</h3>`;
+  // ---------------- Render Topics ----------------
+  function renderTopics(){
+    topicsContainer.innerHTML='';
+    topics.forEach((t,topicIndex)=>{
+      const box=document.createElement('div');
+      box.className='topicBox';
+      box.innerHTML=`<div class="topicHeader">
+        <h3 style="margin:0">${t.title}</h3>
+        <div class="muted">#${topicIndex+1}</div>
+      </div>`;
+      if(t.records.length===0){
+        box.innerHTML+=`<div class="timestamp">Brak zgłoszeń</div>`;
+      } else {
+        t.records.forEach((rec,recIndex)=>{
+          const recDiv=document.createElement('div');
+          const groupSize = rec.members.length;
+          const groupClass = groupSize === 6 ? "fullGroup" : "smallGroup";
+          let tableHtml=`<table class="${groupClass}"><thead><tr><th>Imię i nazwisko</th><th>Album</th></tr></thead><tbody>`;
+          rec.members.forEach(m=>{
+            const albumClass = m.album === "00000" ? "albumError" : "";
+            tableHtml+=`<tr><td>${escapeHtml(m.name)}</td><td class="${albumClass}">${escapeHtml(m.album)}</td></tr>`;
+          });
+          tableHtml+=`</tbody></table>`;
+          recDiv.innerHTML=tableHtml;
+          recDiv.innerHTML+=`<div class="timestamp">Wysłano: ${escapeHtml(rec.time)}</div>`;
 
-  const form=document.createElement('div');
+          if(isAdmin){
+            const ctrl=document.createElement('div');
+            ctrl.className='controls';
+            const editBtn=document.createElement('button'); editBtn.textContent='Edytuj';
+            editBtn.addEventListener('click',()=>openEditDialog(topicIndex,recIndex));
+            const delBtn=document.createElement('button'); delBtn.textContent='Usuń'; delBtn.className='danger';
+            delBtn.addEventListener('click',()=>{
+              if(confirm("Usunąć wpis?")){
+                topics[topicIndex].records.splice(recIndex,1);
+                save(); renderTopics();
+              }
+            });
+            ctrl.appendChild(editBtn); ctrl.appendChild(delBtn); recDiv.appendChild(ctrl);
+          }
 
-  rec.members.forEach((m,i)=>{
-    const row=document.createElement('div');
-    row.className='memberRow';
-    const nameInp=document.createElement('input');
-    const albumInp=document.createElement('input');
-    nameInp.value=m.name;
-    albumInp.value=m.album;
-    albumInp.maxLength = 5;
-    nameInp.className='editName';
-    albumInp.className='editAlbum';
-    row.appendChild(nameInp);
-    row.appendChild(albumInp);
-    form.appendChild(row);
-  });
+          box.appendChild(recDiv);
+        });
+      }
 
-  const timeRow=document.createElement('div');
-  timeRow.style.marginTop='8px';
-  timeRow.innerHTML=`<label>Data (YYYY-MM-DD HH:MM:SS)</label>
-                     <input class="editTime" value="${rec.time}" />`;
-  form.appendChild(timeRow);
+      if(isAdmin){
+        const editTopicBtn=document.createElement('button');
+        editTopicBtn.textContent='Edytuj temat';
+        editTopicBtn.style.marginTop='6px';
+        editTopicBtn.addEventListener('click',()=>editTopicTitle(topicIndex));
+        box.appendChild(editTopicBtn);
+      }
 
-  const buttons=document.createElement('div');
-  buttons.style.display='flex';
-  buttons.style.gap='8px';
-  buttons.style.marginTop='10px';
-
-  const saveBtn=document.createElement('button');
-  saveBtn.textContent='Zapisz';
-  const cancelBtn=document.createElement('button');
-  cancelBtn.textContent='Anuluj';
-  cancelBtn.className='secondary';
-
-  buttons.appendChild(saveBtn);
-  buttons.appendChild(cancelBtn);
-
-  dlg.appendChild(form);
-  dlg.appendChild(buttons);
-  overlay.appendChild(dlg);
-  document.body.appendChild(overlay);
-
-  cancelBtn.addEventListener('click',()=>document.body.removeChild(overlay));
-
-  saveBtn.addEventListener('click',()=>{
-    const newNames=[...dlg.querySelectorAll('.editName')].map(i=>i.value.trim());
-    const newAlbums=[...dlg.querySelectorAll('.editAlbum')].map(i=>i.value.trim());
-    const newTime=dlg.querySelector('.editTime').value.trim();
-
-    if(newNames.some(n=>!n) || newAlbums.some(a=>!a)) return alert("Wypełnij pola!");
-    if(newNames.some(n=>!validName(n))) return alert("Imię — tylko litery i spacje!");
-    if(newAlbums.some(a=>!validAlbum(a))) return alert("Album — maksymalnie 5 cyfr!");
-
-    rec.members = newNames.map((n,i)=>({name:n,album:newAlbums[i]}));
-    rec.time = newTime || formatDateFull(new Date());
-
-    save(); renderTopics();
-    document.body.removeChild(overlay);
-  });
-}
-
-
-
-
-function buildWorkbook(){
-  const wb = XLSX.utils.book_new();
-
-  
-  const aoa = [];
-  const dataRowStyles = []; 
-
-  topics.forEach((topic, tIndex) => {
-    
-    aoa.push([`Temat ${tIndex+1}: ${topic.title}`]);
-    dataRowStyles.push(null); 
-
-    aoa.push([]); 
-    dataRowStyles.push(null);
-
-    
-    aoa.push(['Imię i nazwisko','Album','Data wysłania']);
-    dataRowStyles.push({header:true});
-
-    
-    topic.records.forEach(rec=>{
-      const groupSize = rec.members.length;
-      
-      const rowFillColor = (groupSize === 6) ? "C6F6D5" : "FEF08A";
-
-      rec.members.forEach(m=>{
-        aoa.push([m.name, m.album, rec.time]);
-        
-        const isAlbumError = (m.album === "00000");
-        dataRowStyles.push({fill: rowFillColor, albumError: isAlbumError});
-      });
+      topicsContainer.appendChild(box);
     });
+  }
 
-    
-    aoa.push([]);
-    dataRowStyles.push(null);
+  // ---------------- Admin ----------------
+  function setAdminMode(on){
+    isAdmin = !!on;
+    if(isAdmin){
+      adminStatus.textContent="Zalogowano jako admin";
+      logoutBtn.classList.remove("hidden");
+      loginBtn.classList.add("hidden");
+      loginInput.disabled=true; passwordInput.disabled=true;
+      downloadBtn.classList.remove("hidden");
+    } else {
+      adminStatus.textContent="Nie zalogowano";
+      logoutBtn.classList.add("hidden");
+      loginBtn.classList.remove("hidden");
+      loginInput.disabled=false; passwordInput.disabled=false;
+      downloadBtn.classList.add("hidden");
+    }
+    renderTopics();
+  }
+
+  loginBtn.addEventListener('click',()=>{
+    const login=loginInput.value.trim();
+    const pass=passwordInput.value.trim();
+    if(login===ADMIN_LOGIN && pass===ADMIN_PASS){
+      sessionStorage.setItem('isAdmin','1');
+      setAdminMode(true);
+      alert("Zalogowano jako admin");
+    }else alert("Zły login lub hasło");
   });
 
-  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  logoutBtn.addEventListener('click',()=>{
+    sessionStorage.removeItem('isAdmin');
+    loginInput.value=''; passwordInput.value='';
+    setAdminMode(false);
+  });
 
-  
-  ws['!cols'] = [{wpx:220},{wpx:110},{wpx:160}];
+  if(sessionStorage.getItem('isAdmin')==='1') setAdminMode(true);
 
-  
-  let rowIndex = 1; 
-  for(let i=0;i<dataRowStyles.length;i++){
-    const styleInfo = dataRowStyles[i];
-    
-    const A = `A${rowIndex}`, B = `B${rowIndex}`, C = `C${rowIndex}`;
-
-    if(styleInfo && styleInfo.header){
-      
-      [A,B,C].forEach(addr=>{
-        if(!ws[addr]) ws[addr] = {t:'s',v:''};
-        ws[addr].s = ws[addr].s || {};
-        ws[addr].s.font = Object.assign({}, ws[addr].s.font, {bold:true});
-        ws[addr].s.alignment = Object.assign({}, ws[addr].s.alignment, {horizontal:"center"});
+  // ---------------- XLSX ----------------
+  function buildWorkbook(){
+    const wb = XLSX.utils.book_new();
+    const aoa = []; const dataRowStyles = [];
+    topics.forEach((topic,tIndex)=>{
+      aoa.push([`Temat ${tIndex+1}: ${topic.title}`]); dataRowStyles.push(null);
+      aoa.push([]); dataRowStyles.push(null);
+      aoa.push(['Imię i nazwisko','Album','Data wysłania']); dataRowStyles.push({header:true});
+      topic.records.forEach(rec=>{
+        const groupSize = rec.members.length;
+        const rowFillColor = (groupSize===6)?"C6F6D5":"FEF08A";
+        rec.members.forEach(m=>{
+          aoa.push([m.name,m.album,rec.time]);
+          const isAlbumError = (m.album==="00000");
+          dataRowStyles.push({fill:rowFillColor,albumError:isAlbumError});
+        });
       });
-    } else if(styleInfo && styleInfo.fill){
-      
-      const fillRgb = styleInfo.fill;
-      
-      if(!ws[A]) ws[A] = {t:'s',v:''};
-      ws[A].s = ws[A].s || {};
-      ws[A].s.fill = {patternType:"solid",fgColor:{rgb:fillRgb}};
-      
-      if(!ws[B]) ws[B] = {t:'s',v:''};
-      ws[B].s = ws[B].s || {};
-      ws[B].s.fill = {patternType:"solid",fgColor:{rgb:fillRgb}};
-      
-      if(!ws[C]) ws[C] = {t:'s',v:''};
-      ws[C].s = ws[C].s || {};
-      ws[C].s.fill = {patternType:"solid",fgColor:{rgb:fillRgb}};
-
-      
-      if(styleInfo.albumError){
-        ws[B].s = {
-          fill:{patternType:"solid",fgColor:{rgb:"EF4444"}},
-          font:{color:{rgb:"FFFFFF"},bold:true}
-        };
-      }
-    } else {
-      
-      if(ws[A] && typeof ws[A].v === 'string' && ws[A].v.startsWith('Temat ')){
-        ws[A].s = ws[A].s || {};
-        ws[A].s.font = Object.assign({}, ws[A].s.font, {bold:true, sz:12});
-      }
+      aoa.push([]); dataRowStyles.push(null);
+    });
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = [{wpx:220},{wpx:110},{wpx:160}];
+    let rowIndex=1;
+    for(let i=0;i<dataRowStyles.length;i++){
+      const styleInfo=dataRowStyles[i];
+      const A=`A${rowIndex}`,B=`B${rowIndex}`,C=`C${rowIndex}`;
+      if(styleInfo && styleInfo.header){[A,B,C].forEach(addr=>{if(!ws[addr]) ws[addr]={t:'s',v:''}; ws[addr].s=ws[addr].s||{}; ws[addr].s.font={bold:true}; ws[addr].s.alignment={horizontal:"center"};});}
+      else if(styleInfo && styleInfo.fill){[A,B,C].forEach(addr=>{if(!ws[addr]) ws[addr]={t:'s',v:''}; ws[addr].s={fill:{patternType:"solid",fgColor:{rgb:styleInfo.fill}}};}); if(styleInfo.albumError){ws[B].s={fill:{patternType:"solid",fgColor:{rgb:"EF4444"}},font:{color:{rgb:"FFFFFF"},bold:true}};}}
+      else if(ws[A] && typeof ws[A].v==='string' && ws[A].v.startsWith('Temat ')){ws[A].s={font:{bold:true,sz:12}};}
+      rowIndex++;
     }
-
-    rowIndex++;
+    XLSX.utils.book_append_sheet(wb,ws,'Wszystkie tematy'.substring(0,31));
+    return wb;
   }
+  function downloadXLSX(){const wb=buildWorkbook(); XLSX.writeFile(wb,"tematy.xlsx",{bookType:"xlsx",cellStyles:true});}
+  downloadBtn.addEventListener('click',downloadXLSX);
 
-  
-  const safeName = 'Wszystkie tematy'.substring(0,31);
-  XLSX.utils.book_append_sheet(wb, ws, safeName);
-
-  return wb;
-}
-
-function downloadXLSX(){
-  const wb = buildWorkbook();
-  
-  XLSX.writeFile(wb, "tematy.xlsx", { bookType: "xlsx", cellStyles: true });
-}
-
-downloadBtn.addEventListener('click', downloadXLSX);
-
-
-function setAdminMode(on){
-  isAdmin = !!on;
-  if(isAdmin){
-    adminStatus.textContent="Zalogowano jako admin";
-    logoutBtn.classList.remove("hidden");
-    loginBtn.classList.add("hidden");
-    loginInput.disabled=true;
-    passwordInput.disabled=true;
-    downloadBtn.classList.remove("hidden");
-  } else {
-    adminStatus.textContent="Nie zalogowano";
-    logoutBtn.classList.add("hidden");
-    loginBtn.classList.remove("hidden");
-    loginInput.disabled=false;
-    passwordInput.disabled=false;
-    downloadBtn.classList.add("hidden");
-  }
-  renderTopics();
-}
-
-loginBtn.addEventListener('click',()=>{
-  const login=loginInput.value.trim();
-  const pass=passwordInput.value.trim();
-  if(login===ADMIN_LOGIN && pass===ADMIN_PASS){
-    sessionStorage.setItem('isAdmin','1');
-    setAdminMode(true);
-    alert("Zalogowano jako admin");
-  }else alert("Zły login lub hasło");
-});
-
-logoutBtn.addEventListener('click',()=>{
-  sessionStorage.removeItem('isAdmin');
-  loginInput.value='';
-  passwordInput.value='';
-  setAdminMode(false);
-});
-
-if(sessionStorage.getItem('isAdmin')==='1') setAdminMode(true);
-
-loadTopicsSelect();
-renderTopics();
-
+  // ---------------- Init ----------------
+  (async function init(){await loadFromFirestore(); loadTopicsSelect(); renderTopics(); if(sessionStorage.getItem('isAdmin')==='1') setAdminMode(true);})();
 </script>
 </body>
 </html>
-
-
-
